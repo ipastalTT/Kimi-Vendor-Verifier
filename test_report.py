@@ -31,6 +31,7 @@ import subprocess
 import sys
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
+from functools import lru_cache
 from datetime import datetime
 from pathlib import Path
 
@@ -188,8 +189,29 @@ def classify(message: str) -> str:
     return first[:160] + ("…" if len(first) > 160 else "")
 
 
+@lru_cache(maxsize=1)
+def prompt_token_case_features() -> dict[str, str]:
+    """Map prompt_tokens case ids to the feature their request exercises, if any."""
+    features = {}
+    for path in (REPO_ROOT / "testdata" / "prompt_token_cases").glob("*cases.jsonl"):
+        for line in path.read_text(encoding="utf-8").splitlines():
+            try:
+                case = json.loads(line)
+            except json.JSONDecodeError:  # e.g. an un-pulled Git LFS pointer
+                continue
+            request = case.get("request", {})
+            tool_choice = request.get("tool_choice")
+            if request.get("response_format") or tool_choice == "required" or isinstance(tool_choice, dict):
+                features[case["id"]] = "structured_output"
+    return features
+
+
 def attribute_feature(test: TestResult) -> str:
     test_id = f"{test.classname}::{test.name}"
+    if test.suite == "prompt_tokens":
+        case_id = test.name.partition("[")[2].rstrip("]")
+        if case_id in prompt_token_case_features():
+            return prompt_token_case_features()[case_id]
     for feature, suite_re, name_re, msg_re in FEATURE_RULES:
         if suite_re and not re.search(suite_re, test.suite):
             continue
