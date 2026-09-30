@@ -150,7 +150,7 @@ uv run pytest tests/prompt_tokens -n 16 \
 
 ### 运行全部测试并生成报告：`run_verifier.sh`
 
-`run_verifier.sh` 并行运行所有 pytest 测试集（默认每个测试集 16 个 pytest-xdist worker），并在 `reports/<provider>_<model>_<timestamp>/` 下生成 Markdown 报告和机器可读的 `summary.json`。报告列出每个测试集的通过率，按原因归类失败用例，并将每个失败归属到对应的 API 功能。`UNSUPPORTED` 中声明的功能（如 `vision`、`structured_output`）会被豁免：仍会列出，但不影响验收结果，报告会给出其占全部失败的比例。`k3_features` 仅在模型名包含 `K3` 时计入评分，其他模型仅作参考；同时 `prompt_tokens` 会自动以该模型自身的 Hugging Face tokenizer 作为参考并去掉 `reasoning_effort`（可通过 `PROMPT_TOKENS_REFERENCE` / `STRIP_REASONING_EFFORT` 覆盖）。脚本可从任意目录调用，验收通过返回 `0`，否则返回 `1`。
+`run_verifier.sh` 并行运行所有 pytest 测试集（默认每个测试集 16 个 pytest-xdist worker），并在 `reports/<provider>_<model>_<timestamp>/` 下生成 Markdown 报告、机器可读的 `summary.json`，以及 `verifier_results_<id>.json`（沿用 tt-inference-server 报告结构 `metadata` / `sections` / `acceptance_*`，包含每个用例的结果及完整的失败信息和 traceback）。报告列出每个测试集的通过率，按原因归类失败用例，并将每个失败归属到对应的 API 功能。`UNSUPPORTED` 中声明的功能（如 `vision`、`structured_output`）会被豁免：仍会列出，但不影响验收结果，报告会给出其占全部失败的比例。`k3_features` 仅在模型名包含 `K3` 时计入评分，其他模型仅作参考；同时 `prompt_tokens` 会自动以该模型自身的 Hugging Face tokenizer 作为参考并去掉 `reasoning_effort`（可通过 `PROMPT_TOKENS_REFERENCE` / `STRIP_REASONING_EFFORT` 覆盖）。脚本可从任意目录调用，验收通过返回 `0`，否则返回 `1`。
 
 ```bash
 KIMI_API_KEY=... \
