@@ -76,10 +76,28 @@ command -v uv >/dev/null 2>&1 || die "uv is not installed (https://docs.astral.s
 # prompt_tokens fixtures live in Git LFS; fetch them if only pointers are present.
 if [[ " $SUITES " == *" prompt_tokens "* ]] && \
    head -c 40 "$REPO_DIR/testdata/prompt_token_cases/cases.jsonl" | grep -q "git-lfs"; then
-    git -C "$REPO_DIR" lfs version >/dev/null 2>&1 || \
-        die "prompt_tokens needs Git LFS data; install git-lfs or drop prompt_tokens from SUITES"
-    echo "run_verifier: fetching prompt_tokens LFS fixtures" >&2
-    git -C "$REPO_DIR" lfs pull --include="testdata/prompt_token_cases/**"
+    if git -C "$REPO_DIR" lfs version >/dev/null 2>&1; then
+        echo "run_verifier: fetching prompt_tokens LFS fixtures" >&2
+        git -C "$REPO_DIR" lfs pull --include="testdata/prompt_token_cases/**"
+    else
+        # No git-lfs (e.g. a bare CI runner): fetch the objects over HTTPS from
+        # GitHub's LFS media endpoint for this checkout's origin and commit.
+        remote="$(git -C "$REPO_DIR" remote get-url origin 2>/dev/null || true)"
+        [[ "$remote" =~ github\.com[:/]([^/]+/[^/]+)$ ]] || \
+            die "prompt_tokens needs Git LFS data; install git-lfs or drop prompt_tokens from SUITES"
+        slug="${BASH_REMATCH[1]%.git}"
+        rev="$(git -C "$REPO_DIR" rev-parse HEAD)"
+        echo "run_verifier: git-lfs not found; downloading prompt_tokens fixtures from $slug@$rev" >&2
+        while IFS= read -r -d '' f; do
+            head -c 40 "$f" | grep -q "git-lfs" || continue
+            rel="${f#"$REPO_DIR"/}"
+            size="$(sed -n 's/^size //p' "$f")"
+            curl -fsSL --retry 3 -o "$f.download" "https://media.githubusercontent.com/media/$slug/$rev/$rel" || \
+                die "failed to download LFS object $rel"
+            [[ "$(wc -c < "$f.download" | tr -d ' ')" == "$size" ]] || die "size mismatch for LFS object $rel"
+            mv "$f.download" "$f"
+        done < <(find "$REPO_DIR/testdata/prompt_token_cases" -type f -print0)
+    fi
 fi
 
 # Use the verifier's own environment, not whatever venv the caller has active.
