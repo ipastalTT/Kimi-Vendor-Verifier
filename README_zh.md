@@ -103,6 +103,7 @@ uv run pytest -n 4 tests/tool_call_json_schema \
 | `--thinking` | 开启 tool-call 请求的 thinking mode | 关闭 |
 | `--think-mode` | thinking 参数格式：`kimi`、`opensource` 或 `none` | 环境变量 `THINK_MODE`，否则 `kimi` |
 | `--max-tokens` | 每次 tool-call response 的最大输出 token 数 | `2048` |
+| `--tool-choice` | 请求的 `tool_choice`：`required` 强制调用工具；`auto` 用于不支持 guided decoding 的供应商，模型若以纯文本回答则该用例失败 | `TOOL_CHOICE` 环境变量，否则 `required` |
 | `--tool-json-report` | 额外的 JSON 报告产物路径 | `tool-call-schema-report.json` |
 
 ### K3 Feature 验证：`tests/k3_features/`
@@ -137,6 +138,29 @@ uv run pytest tests/prompt_tokens \
     -ra -v
 ```
 
+case 中的期望常量采集自 K3，而 K3 的 chat template 会添加其他 Kimi 模型没有的内容（例如 thinking effort 段落）。对于其他模型，可传入 `--prompt-tokens-reference <hf-repo-or-dir>`，改为基于该模型公开的 tokenizer 和 chat template 计算期望值：渲染后的 prompt 长度，加上每张图片按模型视觉处理器配置计算的 token 数（减去 template 输出的一个 `<|media_pad|>` 占位符）。对于不支持 thinking effort 的模型（如 Kimi-K2.7），再加上 `--strip-reasoning-effort`，不发送 K3 专用的 `reasoning_effort` 字段。
+
+```bash
+uv run pytest tests/prompt_tokens -n 16 \
+    --base-url "${KIMI_BASE_URL}" \
+    --smoke-model moonshotai/Kimi-K2.7-Code \
+    --prompt-tokens-reference moonshotai/Kimi-K2.7-Code \
+    --strip-reasoning-effort
+```
+
+### 运行全部测试并生成报告：`run_verifier.sh`
+
+`run_verifier.sh` 并行运行所有 pytest 测试集（默认每个测试集 16 个 pytest-xdist worker），并在 `reports/<provider>_<model>_<timestamp>/` 下生成 Markdown 报告和机器可读的 `summary.json`。报告列出每个测试集的通过率，按原因归类失败用例，并将每个失败归属到对应的 API 功能。`UNSUPPORTED` 中声明的功能（如 `vision`、`structured_output`）会被豁免：仍会列出，但不影响验收结果，报告会给出其占全部失败的比例。`k3_features` 仅在模型名包含 `K3` 时计入评分，其他模型仅作参考；同时 `prompt_tokens` 会自动以该模型自身的 Hugging Face tokenizer 作为参考并去掉 `reasoning_effort`（可通过 `PROMPT_TOKENS_REFERENCE` / `STRIP_REASONING_EFFORT` 覆盖）。脚本可从任意目录调用，验收通过返回 `0`，否则返回 `1`。
+
+```bash
+KIMI_API_KEY=... \
+KIMI_BASE_URL=https://api.example.com/v1 \
+MODEL_NAME=moonshotai/Kimi-K2.7-Code \
+PROVIDER=Example TOOL_CHOICE=auto UNSUPPORTED="vision structured_output" \
+./run_verifier.sh
+```
+
+全部配置项（每个测试集的 worker 数、测试集、重试次数、报告目录）见 `run_verifier.sh` 文件头。`uv run python test_report.py --render-only reports/<run-dir>` 可基于已有结果重新生成报告，无需再次调用 API。
 
 ### 为什么tests 不放在 inspect-ai
 

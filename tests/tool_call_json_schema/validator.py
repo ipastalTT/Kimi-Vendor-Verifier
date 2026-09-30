@@ -536,6 +536,7 @@ def send_tool_schema(
     think_mode: str,
     *,
     stream: bool = False,
+    tool_choice: str = DEFAULT_TOOL_CHOICE,
 ) -> ToolResponse:
     extra_body = get_thinking_extra_body(thinking, think_mode)
     request: dict[str, Any] = {
@@ -574,7 +575,7 @@ def send_tool_schema(
                 },
             }
         ],
-        "tool_choice": DEFAULT_TOOL_CHOICE,
+        "tool_choice": tool_choice,
         "max_tokens": max_tokens,
     }
     if stream:
@@ -656,6 +657,7 @@ def evaluate_case(
     think_mode: str,
     *,
     mode: str = "non-stream",
+    tool_choice: str = DEFAULT_TOOL_CHOICE,
 ) -> ToolCaseResult:
     response = send_tool_schema(
         client,
@@ -665,6 +667,7 @@ def evaluate_case(
         thinking,
         think_mode,
         stream=mode == "stream",
+        tool_choice=tool_choice,
     )
     if response.error_type and (
         response.http_status is None

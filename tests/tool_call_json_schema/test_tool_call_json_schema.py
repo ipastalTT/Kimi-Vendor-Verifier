@@ -58,6 +58,7 @@ def test_tool_call_schema_matches_case_schema(
     thinking_flag: bool,
     think_mode: str,
     max_tokens_for_tool_schema: int,
+    tool_choice_for_tool_schema: str,
     case_info: tuple[ValidatorCase, Any, str, str],
 ) -> None:
     """Send a single walle schema as tool parameters and validate arguments."""
@@ -70,6 +71,7 @@ def test_tool_call_schema_matches_case_schema(
         thinking_flag,
         think_mode,
         stream=mode == "stream",
+        tool_choice=tool_choice_for_tool_schema,
     )
 
     assert response.accepted, (

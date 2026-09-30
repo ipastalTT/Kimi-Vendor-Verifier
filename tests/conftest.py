@@ -73,6 +73,27 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         default=int(os.environ.get("WALLE_MAX_TOKENS", "2048")),
         help="Maximum output tokens for each tool-call response (default: 2048)",
     )
+    parser.addoption(
+        "--tool-choice",
+        choices=["required", "auto"],
+        default=os.environ.get("TOOL_CHOICE", "required"),
+        help="tool_choice for tool-call schema requests; use auto for vendors "
+             "without guided decoding (default: TOOL_CHOICE or required)",
+    )
+    parser.addoption(
+        "--prompt-tokens-reference",
+        default=os.environ.get("PROMPT_TOKENS_REFERENCE", "cases"),
+        help="Source of expected prompt_tokens: 'cases' for the constants in the case "
+             "files (K3), or a Hugging Face repo id / local directory whose tokenizer and "
+             "chat template compute the expected count (default: PROMPT_TOKENS_REFERENCE or cases)",
+    )
+    parser.addoption(
+        "--strip-reasoning-effort",
+        action="store_true",
+        default=os.environ.get("STRIP_REASONING_EFFORT", "") not in ("", "0", "false"),
+        help="Remove reasoning_effort from prompt-token requests, for models without "
+             "thinking effort (default: STRIP_REASONING_EFFORT)",
+    )
 
 
 @pytest.fixture(scope="session")
@@ -108,6 +129,11 @@ def thinking_flag(pytestconfig: pytest.Config) -> bool:
 @pytest.fixture(scope="session")
 def max_tokens_for_tool_schema(pytestconfig: pytest.Config) -> int:
     return pytestconfig.getoption("max_tokens")
+
+
+@pytest.fixture(scope="session")
+def tool_choice_for_tool_schema(pytestconfig: pytest.Config) -> str:
+    return pytestconfig.getoption("tool_choice")
 
 
 @pytest.fixture(scope="function")

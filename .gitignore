@@ -21,6 +21,7 @@ __pycache__/
 
 # Generated reports
 real_verification_report.json
+reports/
 
 # Temporary debug scripts
 retry_*.py

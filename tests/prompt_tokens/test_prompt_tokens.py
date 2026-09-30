@@ -6,6 +6,10 @@ every case with ``stream=true`` and accepts the returned
 ``usage.prompt_tokens`` when it is between the expected value and three tokens
 above it, inclusive. Local image fixtures are resized and encoded as base64
 data URLs immediately before the request.
+
+The expected value is the case constant (collected on K3) unless
+``--prompt-tokens-reference`` names a tokenizer to compute it from; see
+``reference.py``.
 """
 
 from __future__ import annotations
@@ -21,6 +25,8 @@ from urllib.parse import parse_qs, unquote, urlsplit
 import openai
 from PIL import Image
 import pytest
+
+from tests.prompt_tokens.reference import ReferenceCounter
 
 
 CASE_DIR = Path(__file__).parents[2] / "testdata" / "prompt_token_cases"
@@ -210,15 +216,35 @@ def test_prompt_token_tolerance_boundaries(actual: int, accepted: bool) -> None:
     )
 
 
+@pytest.fixture(scope="session")
+def reference_counter(pytestconfig: pytest.Config) -> ReferenceCounter | None:
+    source = pytestconfig.getoption("prompt_tokens_reference")
+    return None if source == "cases" else ReferenceCounter(source)
+
+
 @pytest.mark.parametrize("case", CASES, ids=CASE_IDS)
 def test_prompt_tokens_match_groundtruth(
     client: openai.Client,
     model: str,
     case: dict[str, Any],
+    reference_counter: ReferenceCounter | None,
+    pytestconfig: pytest.Config,
 ) -> None:
     """A single prompt-token groundtruth case."""
     request = _materialize_image_fixtures(case["request"])
     request.pop("stream", None)
+    if pytestconfig.getoption("strip_reasoning_effort"):
+        request.pop("reasoning_effort", None)
+
+    if reference_counter is None:
+        expected = case["expected_prompt_tokens"]
+        source = "case constant"
+    else:
+        try:
+            expected = reference_counter.count(request)
+        except Exception as exc:
+            pytest.fail(f"case {case['id']}: reference count failed: {type(exc).__name__}: {exc}")
+        source = f"reference {reference_counter.source}"
 
     extra_body = {
         key: request.pop(key)
@@ -245,7 +271,6 @@ def test_prompt_tokens_match_groundtruth(
         pytest.fail(f"infrastructure/API error for case {case['id']}: {_error_message(exc) if hasattr(exc, 'response') else exc}")
 
     actual, message = _extract_stream_prompt_tokens(stream)
-    expected = case["expected_prompt_tokens"]
 
     assert actual is not None, (
         f"case {case['id']}: could not read prompt_tokens: {message}"
@@ -254,5 +279,5 @@ def test_prompt_tokens_match_groundtruth(
     assert _prompt_tokens_are_acceptable(expected=expected, actual=actual), (
         f"case {case['id']}: prompt_tokens outside accepted range: "
         f"got {actual}, expected [{expected}, {allowed_max}] "
-        f"(diff {actual - expected:+d})"
+        f"(diff {actual - expected:+d}; {source})"
     )

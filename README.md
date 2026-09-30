@@ -103,6 +103,7 @@ This check runs walle `valid.jsonl` cases, sends each schema as `tools[].functio
 | `--thinking` | Enable thinking mode for the tool-call request | Off |
 | `--think-mode` | Thinking parameter format: `kimi`, `opensource`, or `none` | `THINK_MODE` env var, otherwise `kimi` |
 | `--max-tokens` | Maximum output tokens for each tool-call response | `2048` |
+| `--tool-choice` | `tool_choice` for each request: `required` forces the call; `auto` is for vendors without guided decoding and fails cases where the model answers in plain text | `TOOL_CHOICE` env var, otherwise `required` |
 | `--tool-json-report` | Path to the additional JSON report artifact | `tool-call-schema-report.json` |
 
 ### K3 Feature Validation: `tests/k3_features/`
@@ -142,6 +143,30 @@ uv run pytest tests/prompt_tokens \
     --smoke-model "${MODEL_NAME}" \
     -ra -v
 ```
+
+The case constants were collected on K3, whose chat template adds content other Kimi models do not (e.g. a thinking-effort block). For other models, pass `--prompt-tokens-reference <hf-repo-or-dir>` to compute the expected count from that model's published tokenizer and chat template instead: the rendered prompt length plus, for each image, the token count from the model's vision processor config (minus the one `<|media_pad|>` placeholder the template emits). Add `--strip-reasoning-effort` for models without thinking effort (e.g. Kimi-K2.7), so the K3-only `reasoning_effort` field is not sent.
+
+```bash
+uv run pytest tests/prompt_tokens -n 16 \
+    --base-url "${KIMI_BASE_URL}" \
+    --smoke-model moonshotai/Kimi-K2.7-Code \
+    --prompt-tokens-reference moonshotai/Kimi-K2.7-Code \
+    --strip-reasoning-effort
+```
+
+### Run All Suites with a Report: `run_verifier.sh`
+
+`run_verifier.sh` runs every pytest suite in parallel (16 pytest-xdist workers per suite by default) and writes a Markdown report plus a machine-readable `summary.json` to `reports/<provider>_<model>_<timestamp>/`. The report lists per-suite pass rates, groups failing tests by cause, and attributes every failure to an API feature. Features declared in `UNSUPPORTED` (e.g. `vision`, `structured_output`) are waived: they are still listed but do not fail acceptance, and the report gives their share of all failures. `k3_features` is graded only when the model name contains `K3`; for other models it runs for information only, and `prompt_tokens` automatically uses the model's own Hugging Face tokenizer as the reference and drops `reasoning_effort` (override with `PROMPT_TOKENS_REFERENCE` / `STRIP_REASONING_EFFORT`). The script can be called from any directory and exits `0` on acceptance, `1` otherwise.
+
+```bash
+KIMI_API_KEY=... \
+KIMI_BASE_URL=https://api.example.com/v1 \
+MODEL_NAME=moonshotai/Kimi-K2.7-Code \
+PROVIDER=Example TOOL_CHOICE=auto UNSUPPORTED="vision structured_output" \
+./run_verifier.sh
+```
+
+See the header of `run_verifier.sh` for all settings (worker counts per suite, suites, reruns, report directory). `uv run python test_report.py --render-only reports/<run-dir>` rebuilds a report from an existing run without calling the API.
 
 ### Why These Tests Are Not in Inspect-ai
 

@@ -188,6 +188,7 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
         "dry_run": False,
         "thinking": bool(config.getoption("thinking")),
         "think_mode": config.getoption("think_mode"),
+        "tool_choice": config.getoption("tool_choice"),
         "modes": sorted({r["mode"] for r in results}),
         "selected_cases": _selected_cases(results),
         "summary": _summarize(results),
