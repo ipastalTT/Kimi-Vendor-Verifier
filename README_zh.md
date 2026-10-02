@@ -160,7 +160,7 @@ PROVIDER=Example TOOL_CHOICE=auto UNSUPPORTED="vision structured_output" \
 ./run_verifier.sh
 ```
 
-全部配置项（每个测试集的 worker 数、测试集、重试次数、报告目录）见 `run_verifier.sh` 文件头。`uv run python test_report.py --render-only reports/<run-dir>` 可基于已有结果重新生成报告，无需再次调用 API。
+运行期间每 60 秒为每个测试集打印一行 `[progress]`（完成百分比、用例数、目前失败数；`VERIFIER_PROGRESS_INTERVAL` 设置间隔，`0` 关闭）。全部配置项（每个测试集的 worker 数、测试集、重试次数、报告目录）见 `run_verifier.sh` 文件头。`uv run python test_report.py --render-only reports/<run-dir>` 可基于已有结果重新生成报告，无需再次调用 API。
 
 ### 为什么tests 不放在 inspect-ai
 

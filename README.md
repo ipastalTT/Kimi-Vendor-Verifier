@@ -166,7 +166,7 @@ PROVIDER=Example TOOL_CHOICE=auto UNSUPPORTED="vision structured_output" \
 ./run_verifier.sh
 ```
 
-See the header of `run_verifier.sh` for all settings (worker counts per suite, suites, reruns, report directory). `uv run python test_report.py --render-only reports/<run-dir>` rebuilds a report from an existing run without calling the API.
+While suites run, a `[progress]` line per suite is printed every 60 s (percentage done, cases, failures so far; `VERIFIER_PROGRESS_INTERVAL` sets the interval, `0` turns it off). See the header of `run_verifier.sh` for all settings (worker counts per suite, suites, reruns, report directory). `uv run python test_report.py --render-only reports/<run-dir>` rebuilds a report from an existing run without calling the API.
 
 ### Why These Tests Are Not in Inspect-ai
 
