@@ -255,6 +255,9 @@ def test_prompt_tokens_match_groundtruth(
     kwargs: dict[str, Any] = {
         "model": model,
         "stream": True,
+        # OpenAI-standard servers (e.g. vLLM) only send usage in a stream when asked;
+        # Kimi's API sends it regardless. A case's own stream_options wins.
+        "stream_options": {"include_usage": True},
         **request,
     }
     if extra_body:
