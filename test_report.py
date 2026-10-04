@@ -351,6 +351,7 @@ def run_suites(args: argparse.Namespace, meta: dict, out_dir: Path, workers: dic
         "--think-mode", args.think_mode,
         *(["--default-sampling", "--sampling-params", json.dumps(meta["default_sampling"])]
           if meta.get("default_sampling") else []),
+        *(["--cache-bypass"] if meta.get("cache_bypass") else []),
         "-p", "no:cacheprovider",
         "-q",
     ]
@@ -371,7 +372,7 @@ def run_suites(args: argparse.Namespace, meta: dict, out_dir: Path, workers: dic
     # The pytest options above are explicit; do not let the same env vars override them.
     env = {k: v for k, v in os.environ.items()
            if k not in ("PROMPT_TOKENS_REFERENCE", "STRIP_REASONING_EFFORT", "DEFAULT_SAMPLING",
-                         "SAMPLING_PARAMS")}
+                         "SAMPLING_PARAMS", "CACHE_BYPASS")}
     procs = {}
     for suite in args.suites:
         xdist = ["-n", str(workers[suite])] if workers[suite] > 1 else []
@@ -609,6 +610,12 @@ def render(meta: dict, suites: list[SuiteResult], summary: dict) -> str:
             "itself: " + ", ".join(f"`{k}={json.dumps(v)}`" for k, v in meta["default_sampling"].items())
             + ".",
         ]
+    if meta.get("cache_bypass"):
+        lines[-1:-1] = [
+            "",
+            "Every request carried a unique id at the start of its prompt (first tool description, else first "
+            "message), so none could be served from the server's prefix cache.",
+        ]
     return "\n".join(lines)
 
 
@@ -739,6 +746,11 @@ def main() -> int:
     parser.add_argument("--sampling-params", default=os.environ.get("SAMPLING_PARAMS", ""), metavar="JSON",
                         help="JSON object overriding the default sampling params, e.g. "
                              "'{\"top_k\": 0, \"seed\": null}'")
+    parser.add_argument("--cache-bypass", choices=["yes", "no"],
+                        default="yes" if os.environ.get("CACHE_BYPASS", "") not in ("", "0", "false", "no")
+                        else "no",
+                        help="Give every request a unique prompt prefix so none can hit the server's "
+                             "prefix cache (changes prompt token counts)")
     parser.add_argument("--output-dir", default=str(REPO_ROOT / "reports"))
     parser.add_argument("--render-only", metavar="RUN_DIR",
                         help="Rebuild the report from RUN_DIR without running the tests")
@@ -779,6 +791,7 @@ def main() -> int:
             "prompt_tokens_reference": reference,
             "strip_reasoning_effort": strip_effort,
             "default_sampling": sampling_params(args.sampling_params) if args.default_sampling == "yes" else None,
+            "cache_bypass": args.cache_bypass == "yes",
             "run_command": shlex.join(["python", "test_report.py", *sys.argv[1:]]),
             "verifier_commit": subprocess.run(
                 ["git", "rev-parse", "--short", "HEAD"], cwd=REPO_ROOT,

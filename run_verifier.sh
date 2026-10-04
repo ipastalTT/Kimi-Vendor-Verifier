@@ -31,6 +31,8 @@
 #   DEFAULT_SAMPLING        yes | no: send temperature 1.0, top_p 0.95, top_k 50, n 1 and
 #                           presence/frequency_penalty 0 on requests that do not set them (default: no)
 #   SAMPLING_PARAMS         JSON object overriding those values, e.g. '{"top_k": 0, "seed": null}'
+#   CACHE_BYPASS            yes | no: unique id at the start of every prompt so no request can hit
+#                           the server's prefix cache; changes prompt token counts (default: no)
 #   REPORT_DIR              Where run directories are created       (default: <repo>/reports)
 #
 # Extra arguments are passed through to test_report.py.
@@ -70,6 +72,7 @@ TOOL_SCHEMA_RERUNS="${TOOL_SCHEMA_RERUNS:-3}"
 PROMPT_TOKENS_REFERENCE="${PROMPT_TOKENS_REFERENCE:-auto}"
 STRIP_REASONING_EFFORT="${STRIP_REASONING_EFFORT:-auto}"
 DEFAULT_SAMPLING="${DEFAULT_SAMPLING:-no}"
+CACHE_BYPASS="${CACHE_BYPASS:-no}"
 REPORT_DIR="${REPORT_DIR:-$REPO_DIR/reports}"
 
 [[ "$KIMI_BASE_URL" == */v1 || "$KIMI_BASE_URL" == */v1/ ]] || \
@@ -117,6 +120,7 @@ args=(
     --prompt-tokens-reference "$PROMPT_TOKENS_REFERENCE"
     --strip-reasoning-effort "$STRIP_REASONING_EFFORT"
     --default-sampling "$DEFAULT_SAMPLING"
+    --cache-bypass "$CACHE_BYPASS"
     --output-dir "$REPORT_DIR"
     --workers
         "params=$PARAMS_WORKERS"

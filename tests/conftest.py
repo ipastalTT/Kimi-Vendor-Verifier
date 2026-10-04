@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -132,13 +133,45 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         help="JSON object overriding or adding to the --default-sampling params, "
              "e.g. '{\"top_k\": 0, \"seed\": null}' (default: SAMPLING_PARAMS)",
     )
+    parser.addoption(
+        "--cache-bypass",
+        action="store_true",
+        default=os.environ.get("CACHE_BYPASS", "") not in ("", "0", "false", "no"),
+        help="Prefix every chat completion prompt with a unique request id (first tool "
+             "description, else first message) so no request can hit the server's prefix "
+             "cache. Changes prompt token counts (default: CACHE_BYPASS)",
+    )
 
 
-def _rewrite_request(request: httpx.Request, params: dict[str, Any]) -> httpx.Request:
-    """Return `request` with default sampling params added to its JSON body.
+def _bust_prefix_cache(body: dict[str, Any]) -> None:
+    """Put a unique id at the very start of the rendered prompt.
 
-    Values the request already sets are kept, so tests that send specific (or
-    deliberately wrong) sampling params are unaffected.
+    Kimi's chat template renders tool declarations before the messages, so the
+    id goes into the first tool's description when there are tools.
+    """
+    nonce = f"[request {uuid.uuid4().hex}] "
+    tools = body.get("tools") or []
+    function = tools[0].get("function") if tools and isinstance(tools[0], dict) else None
+    if isinstance(function, dict):
+        function["description"] = nonce + (function.get("description") or "")
+        return
+    messages = body.get("messages") or []
+    if not messages or not isinstance(messages[0], dict):
+        return
+    content = messages[0].get("content")
+    if isinstance(content, str):
+        messages[0]["content"] = nonce + content
+    elif isinstance(content, list):
+        content.insert(0, {"type": "text", "text": nonce})
+
+
+def _rewrite_request(request: httpx.Request, params: dict[str, Any] | None,
+                     cache_bypass: bool) -> httpx.Request:
+    """Return `request` with default sampling params added to its JSON body
+    and, with `cache_bypass`, a unique id at the start of its prompt.
+
+    Sampling values the request already sets are kept, so tests that send
+    specific (or deliberately wrong) sampling params are unaffected.
     """
     if request.method != "POST" or not request.url.path.endswith("/chat/completions"):
         return request
@@ -148,10 +181,12 @@ def _rewrite_request(request: httpx.Request, params: dict[str, Any]) -> httpx.Re
         return request
     if not isinstance(body, dict):
         return request
-    missing = {k: v for k, v in params.items() if k not in body}
-    if not missing:
+    missing = {k: v for k, v in (params or {}).items() if k not in body}
+    if not missing and not cache_bypass:
         return request
     body.update(missing)
+    if cache_bypass:
+        _bust_prefix_cache(body)
     headers = httpx.Headers(request.headers)
     headers.pop("content-length", None)
     return httpx.Request(
@@ -166,13 +201,15 @@ def _rewrite_request(request: httpx.Request, params: dict[str, Any]) -> httpx.Re
 def pytest_configure(config: pytest.Config) -> None:
     # Patch at the transport boundary so every client (openai SDK and raw
     # httpx, in every suite) is rewritten without per-test changes.
-    if not config.getoption("default_sampling"):
+    cache_bypass = config.getoption("cache_bypass")
+    params = (sampling_params(config.getoption("sampling_params"))
+              if config.getoption("default_sampling") else None)
+    if params is None and not cache_bypass:
         return
-    params = sampling_params(config.getoption("sampling_params"))
     original_send = httpx.Client.send
 
     def send(self: httpx.Client, request: httpx.Request, **kwargs: Any) -> httpx.Response:
-        return original_send(self, _rewrite_request(request, params), **kwargs)
+        return original_send(self, _rewrite_request(request, params, cache_bypass), **kwargs)
 
     httpx.Client.send = send
 
