@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 from typing import Any
@@ -17,6 +18,29 @@ MOONSHOT_APIS = [
     "https://api.moonshot.cn/v1",
     "https://api.moonshot.ai/v1"
 ]
+
+# Default sampling parameters sent with --default-sampling. All but top_k are
+# the fixed values from the Kimi K2.7 Code quickstart
+# (https://platform.kimi.ai/docs/guide/kimi-k2-7-code-quickstart).
+DEFAULT_SAMPLING_PARAMS: dict[str, Any] = {
+    "temperature": 1.0,
+    "top_p": 0.95,
+    "top_k": 50,
+    "n": 1,
+    "presence_penalty": 0.0,
+    "frequency_penalty": 0.0,
+}
+
+
+def sampling_params(overrides: str) -> dict[str, Any]:
+    """DEFAULT_SAMPLING_PARAMS updated with a JSON object of overrides.
+
+    A null value is sent as JSON null (e.g. {"seed": null}).
+    """
+    parsed = json.loads(overrides) if overrides.strip() else {}
+    if not isinstance(parsed, dict):
+        raise ValueError(f"sampling params overrides must be a JSON object, got: {overrides}")
+    return {**DEFAULT_SAMPLING_PARAMS, **parsed}
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -94,6 +118,63 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         help="Remove reasoning_effort from prompt-token requests, for models without "
              "thinking effort (default: STRIP_REASONING_EFFORT)",
     )
+    parser.addoption(
+        "--default-sampling",
+        action="store_true",
+        default=os.environ.get("DEFAULT_SAMPLING", "") not in ("", "0", "false", "no"),
+        help="Add the default sampling params (temperature 1.0, top_p 0.95, top_k 50, "
+             "n 1, presence/frequency_penalty 0) to every chat completion request that "
+             "does not set them (default: DEFAULT_SAMPLING)",
+    )
+    parser.addoption(
+        "--sampling-params",
+        default=os.environ.get("SAMPLING_PARAMS", ""),
+        help="JSON object overriding or adding to the --default-sampling params, "
+             "e.g. '{\"top_k\": 0, \"seed\": null}' (default: SAMPLING_PARAMS)",
+    )
+
+
+def _rewrite_request(request: httpx.Request, params: dict[str, Any]) -> httpx.Request:
+    """Return `request` with default sampling params added to its JSON body.
+
+    Values the request already sets are kept, so tests that send specific (or
+    deliberately wrong) sampling params are unaffected.
+    """
+    if request.method != "POST" or not request.url.path.endswith("/chat/completions"):
+        return request
+    try:
+        body = json.loads(request.content)
+    except (httpx.RequestNotRead, ValueError):
+        return request
+    if not isinstance(body, dict):
+        return request
+    missing = {k: v for k, v in params.items() if k not in body}
+    if not missing:
+        return request
+    body.update(missing)
+    headers = httpx.Headers(request.headers)
+    headers.pop("content-length", None)
+    return httpx.Request(
+        request.method,
+        request.url,
+        headers=headers,
+        content=json.dumps(body, ensure_ascii=False).encode(),
+        extensions=request.extensions,
+    )
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    # Patch at the transport boundary so every client (openai SDK and raw
+    # httpx, in every suite) is rewritten without per-test changes.
+    if not config.getoption("default_sampling"):
+        return
+    params = sampling_params(config.getoption("sampling_params"))
+    original_send = httpx.Client.send
+
+    def send(self: httpx.Client, request: httpx.Request, **kwargs: Any) -> httpx.Response:
+        return original_send(self, _rewrite_request(request, params), **kwargs)
+
+    httpx.Client.send = send
 
 
 @pytest.fixture(scope="session")

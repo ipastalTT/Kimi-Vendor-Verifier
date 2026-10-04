@@ -35,6 +35,8 @@ from functools import lru_cache
 from datetime import datetime
 from pathlib import Path
 
+from tests.conftest import sampling_params
+
 
 REPO_ROOT = Path(__file__).resolve().parent
 
@@ -347,6 +349,8 @@ def run_suites(args: argparse.Namespace, meta: dict, out_dir: Path, workers: dic
         "--base-url", args.base_url,
         "--smoke-model", args.model,
         "--think-mode", args.think_mode,
+        *(["--default-sampling", "--sampling-params", json.dumps(meta["default_sampling"])]
+          if meta.get("default_sampling") else []),
         "-p", "no:cacheprovider",
         "-q",
     ]
@@ -366,7 +370,8 @@ def run_suites(args: argparse.Namespace, meta: dict, out_dir: Path, workers: dic
     }
     # The pytest options above are explicit; do not let the same env vars override them.
     env = {k: v for k, v in os.environ.items()
-           if k not in ("PROMPT_TOKENS_REFERENCE", "STRIP_REASONING_EFFORT")}
+           if k not in ("PROMPT_TOKENS_REFERENCE", "STRIP_REASONING_EFFORT", "DEFAULT_SAMPLING",
+                         "SAMPLING_PARAMS")}
     procs = {}
     for suite in args.suites:
         xdist = ["-n", str(workers[suite])] if workers[suite] > 1 else []
@@ -597,6 +602,13 @@ def render(meta: dict, suites: list[SuiteResult], summary: dict) -> str:
         "tokenizer's chat template plus the image token count of its vision processor.",
         "",
     ]
+    if isinstance(meta.get("default_sampling"), dict):
+        lines[-1:-1] = [
+            "",
+            "Requests were sent with these sampling parameters wherever the test did not set them "
+            "itself: " + ", ".join(f"`{k}={json.dumps(v)}`" for k, v in meta["default_sampling"].items())
+            + ".",
+        ]
     return "\n".join(lines)
 
 
@@ -720,6 +732,13 @@ def main() -> int:
     parser.add_argument("--strip-reasoning-effort", choices=["auto", "yes", "no"],
                         default=os.environ.get("STRIP_REASONING_EFFORT", "auto"),
                         help="Drop reasoning_effort from prompt_tokens requests (auto: for non-K3 models)")
+    parser.add_argument("--default-sampling", choices=["yes", "no"],
+                        default="yes" if os.environ.get("DEFAULT_SAMPLING", "") not in ("", "0", "false", "no")
+                        else "no",
+                        help="Send default sampling params on every request that does not set them")
+    parser.add_argument("--sampling-params", default=os.environ.get("SAMPLING_PARAMS", ""), metavar="JSON",
+                        help="JSON object overriding the default sampling params, e.g. "
+                             "'{\"top_k\": 0, \"seed\": null}'")
     parser.add_argument("--output-dir", default=str(REPO_ROOT / "reports"))
     parser.add_argument("--render-only", metavar="RUN_DIR",
                         help="Rebuild the report from RUN_DIR without running the tests")
@@ -759,6 +778,7 @@ def main() -> int:
             "unsupported": args.unsupported or [],
             "prompt_tokens_reference": reference,
             "strip_reasoning_effort": strip_effort,
+            "default_sampling": sampling_params(args.sampling_params) if args.default_sampling == "yes" else None,
             "run_command": shlex.join(["python", "test_report.py", *sys.argv[1:]]),
             "verifier_commit": subprocess.run(
                 ["git", "rev-parse", "--short", "HEAD"], cwd=REPO_ROOT,
